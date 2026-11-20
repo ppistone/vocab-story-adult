@@ -594,6 +594,51 @@
   .dl-desc { font-size:13px; line-height:1.8; color:var(--ink); max-width:880px; margin:0 0 14px;
              font-family:"PingFang SC","Microsoft YaHei",sans-serif; }
   a.dl-btn { display:inline-block; text-decoration:none; line-height:1.8; }
+
+  /* 左侧查找单词 */
+  .search-wrap { position: relative; margin: 14px 0 16px; }
+  .search-field {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 0 10px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .search-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search-ico { font-size: 13px; opacity: .7; }
+  #wordSearch {
+    flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+    font: inherit; font-size: 13px; color: var(--ink); padding: 9px 0;
+  }
+  #wordSearch::placeholder { color: var(--muted); }
+  .search-clear {
+    border: 0; background: transparent; color: var(--muted);
+    font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px;
+    display: none;
+  }
+  .search-clear.show { display: block; }
+  .search-results {
+    display: none; margin-top: 6px; max-height: 320px; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.08);
+  }
+  .search-results.show { display: block; }
+  .sr-item {
+    display: block; width: 100%; text-align: left;
+    background: transparent; border: 0; border-bottom: 1px solid var(--line);
+    padding: 8px 12px; cursor: pointer; font: inherit; color: var(--ink);
+  }
+  .sr-item:last-child { border-bottom: 0; }
+  .sr-item:hover, .sr-item.sel { background: var(--accent-soft); }
+  .sr-w { font-weight: 700; color: var(--accent); }
+  .sr-zh { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .sr-gid { float: right; font-size: 11px; color: var(--muted); }
+  .sr-empty { padding: 12px; font-size: 12px; color: var(--muted); }
+  .sr-more { padding: 8px 12px; font-size: 11px; color: var(--muted); text-align: center; }
+  tr.hit-row { animation: hitflash 1.6s ease-out; }
+  @keyframes hitflash {
+    0%, 40% { background: var(--accent-soft); }
+    100% { background: transparent; }
+  }
 </style>
 </head>
 <body>
@@ -602,6 +647,14 @@
   <aside class="sidebar">
     <h1>成人英语词汇</h1>
     <p class="sub">COCA 高频词 · 每 100 词一组 · 词表 + 影视例句</p>
+    <div class="search-wrap">
+      <div class="search-field">
+        <span class="search-ico">🔍</span>
+        <input type="text" id="wordSearch" placeholder="查找单词，如 only" autocomplete="off" spellcheck="false">
+        <button type="button" id="searchClear" class="search-clear" title="清空" aria-label="清空搜索">×</button>
+      </div>
+      <div id="searchResults" class="search-results"></div>
+    </div>
     <div id="groupList"></div>
     <div class="pending-note">
       词库共 <b>20,199 词</b>，每 <b>100 词一组</b>，合计 202 组。<br>
@@ -1837,6 +1890,112 @@ document.addEventListener('keydown', e => {
 loadQZ();
 
 /* ===================== 初始化 ===================== */
+
+/* ===================== 左侧查找单词 ===================== */
+(function () {
+  const input = document.getElementById('wordSearch');
+  const box = document.getElementById('searchResults');
+  const clearBtn = document.getElementById('searchClear');
+  if (!input || !box) return;
+  const MAX = 30;
+  let sel = -1, matches = [];
+
+  // 归一化：小写、去首尾空格；保留连字符/空格以便精确匹配
+  function norm(q) { return String(q || '').trim().toLowerCase(); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function firstSense(zh) { return String(zh || '').split(/[；;，,、]/)[0].trim(); }
+
+  function search(q) {
+    const nq = norm(q);
+    if (!nq) { box.classList.remove('show'); box.innerHTML = ''; clearBtn.classList.remove('show'); return; }
+    clearBtn.classList.add('show');
+    // 去重：同一词形只留第一条（首次出现的组）
+    const seen = new Set();
+    const uniq = ALL_WORDS.filter(x => {
+      const k = norm(x.w);
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    const exact = [], prefix = [], contains = [];
+    for (const x of uniq) {
+      const w = norm(x.w);
+      if (w === nq) exact.push(x);
+      else if (w.startsWith(nq)) prefix.push(x);
+      else if (w.indexOf(nq) >= 0) contains.push(x);
+      if (exact.length >= MAX) break;
+    }
+    matches = exact.concat(prefix.slice(0, MAX), contains.slice(0, MAX)).slice(0, MAX);
+    sel = -1;
+    if (!matches.length) {
+      box.innerHTML = '<div class="sr-empty">没有找到匹配的单词</div>';
+    } else {
+      box.innerHTML = matches.map((x, i) =>
+        `<button class="sr-item" data-i="${i}"><span class="sr-gid">第 ${x.gid} 组</span>` +
+        `<span class="sr-w">${esc(x.w)}</span>` +
+        `<span class="sr-zh">${esc(firstSense(x.zh))}</span></button>`
+      ).join('') + (matches.length >= MAX ? '<div class="sr-more">仅显示前 ' + MAX + ' 条，继续输入可缩小范围</div>' : '');
+    }
+    box.classList.add('show');
+  }
+
+  function go(i) {
+    const x = matches[i];
+    if (!x) return;
+    box.classList.remove('show');
+    input.blur();
+    // 跳到该词所在组
+    if (x.gid !== currentGroup) renderGroup(x.gid);
+    // 词表行高亮 + 滚动定位（data-w 在 td 上，需从单元格反查所在行）
+    const cell = elWordTableBody.querySelector('td.en[data-w="' + CSS.escape(x.w) + '"]');
+    const row = cell ? cell.closest('tr') : null;
+    if (row) {
+      row.classList.remove('hit-row');
+      void row.offsetWidth; // 触发重排以重放动画
+      row.classList.add('hit-row');
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    clearHide && clearHide();
+    if (typeof tooltip !== 'undefined') tooltip.style.display = 'none';
+  }
+
+  input.addEventListener('input', () => search(input.value));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!matches.length) return;
+      sel = (sel + 1) % matches.length;
+      highlightSel();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!matches.length) return;
+      sel = (sel - 1 + matches.length) % matches.length;
+      highlightSel();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      go(sel >= 0 ? sel : 0);
+    } else if (e.key === 'Escape') {
+      box.classList.remove('show'); input.blur();
+    }
+  });
+  function highlightSel() {
+    box.querySelectorAll('.sr-item').forEach((b, i) => b.classList.toggle('sel', i === sel));
+    const cur = box.querySelector('.sr-item.sel');
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+  box.addEventListener('click', e => {
+    const item = e.target.closest('.sr-item');
+    if (item) go(Number(item.dataset.i));
+  });
+  clearBtn.addEventListener('click', () => {
+    input.value = ''; box.classList.remove('show'); clearBtn.classList.remove('show');
+    input.focus();
+  });
+})();
+
 renderSidebar();
 renderGroup(1);
 </script>
