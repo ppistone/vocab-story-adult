@@ -1133,8 +1133,8 @@ function positionTip(wordEl) {
   const w = tooltip.offsetWidth;
   const h = tooltip.offsetHeight;
   let left = r.left;
-  let top = r.bottom + 4;
-  if (top + h > window.innerHeight - 8) top = r.top - h - 4;
+  let top = r.bottom + 1;
+  if (top + h > window.innerHeight - 8) top = r.top - h - 1;
   if (left + w > window.innerWidth - 8) left = window.innerWidth - 8 - w;
   if (left < 8) left = 8;
   if (top < 8) top = 8;
@@ -1142,13 +1142,11 @@ function positionTip(wordEl) {
   tooltip.style.top = top + 'px';
 }
 
-// 离开单词和卡片后延迟隐藏，留出把鼠标移到按钮上的时间
+// 鼠标移开立即隐藏释义卡片，无延迟
 function scheduleHide() {
   clearHide();
-  hideTimer = setTimeout(() => {
-    tooltip.style.display = 'none';
-    activeWordEl = null;
-  }, 300);
+  tooltip.style.display = 'none';
+  activeWordEl = null;
 }
 
 document.addEventListener('mouseover', e => {
